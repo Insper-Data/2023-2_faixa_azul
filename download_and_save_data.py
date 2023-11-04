@@ -1,10 +1,17 @@
 import requests
 import pathlib
 import os
-
+import pandas as pd
 ## dicionario com os nomes dos arquivos e suas respectivas urls
 dados = { 'acidentes_naofatais.csv' : 'http://painelderesultados.infosiga.sp.gov.br/bases/acidentes_naofatais.csv', \
             'obitos_publico.csv' : 'http://painelderesultados.infosiga.sp.gov.br/bases/obitos_publico.csv' }
+
+## adicao dos dados de lentidao por trechos no dicionario
+lentidao = pd.read_csv('links_lentidao_por_ano.csv')
+
+dict_lentidao = pd.Series(lentidao.link.values,index=lentidao.nome).to_dict()
+dados = {**dados, **dict_lentidao}
+
 
 DATA_DIR = pathlib.Path.cwd() / 'dados'
 DATA_DIR.mkdir(exist_ok=True, parents=True)
