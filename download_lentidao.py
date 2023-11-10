@@ -35,7 +35,7 @@ if not (DATA_DIR / "lentidao.csv").exists():
              "tamanho (metros)": "tamanho", 
              "data/hora": "data"}, axis = 1) 
         for base in lentidao])
-    df.to_csv(DATA_DIR / 'lentidao.csv', index=False)
+    df.to_csv(DATA_DIR / 'lentidao.csv', index=False, encoding='latin-1')
 else: print(f'Os dados já estão baixados')
 
 
