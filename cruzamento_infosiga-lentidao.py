@@ -26,9 +26,11 @@ avenidas = (pd.read_csv("dados/acidentes_naofatais.csv", encoding = "latin", sep
 )
 
 lentidao = (
-    pd.read_csv("dados/lentidaotrechos2022.csv", encoding="latin", sep = ";")
+    pd.read_csv("dados/lentidao.csv", encoding="latin-1", sep = ",")
     .replace({"corredor": {"Av": "Avenida", ",": "", "/": " ", "\(": " ", "\)": " ", "\.": " "}}, regex = True)
 )
+
+print(lentidao.head())
 
 banlist = ["AVENIDA", "ESTRADA", "DOS", "DE", "DO", "DA", "RUA"]
 

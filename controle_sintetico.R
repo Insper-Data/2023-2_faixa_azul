@@ -22,28 +22,56 @@ df <- df.original %>%
   mutate(ano = year(data),
          mes = month(data)) %>% 
   group_by(ano, mes, rua) %>% 
-  summarize(acidentes = sum(motocicleta)) %>%
-  mutate(data = as_date(year_month_day(ano, mes, 1))) %>% 
-  arrange(rua, desc(data)) %>% 
-  group_by(rua) %>% 
-  mutate(acidentes_mm = rollmean(acidentes, k = 10, fill = NA)) %>% 
+  summarize(acidentes = sum(motocicleta))
+
+df <- data.frame(ano = c(2019:2023),
+                 mes = rep(c(1:12), each = 5),
+                 rua = rep(avenidas, each = 5*12)) %>%
+  as_tibble() %>%
+  left_join(df) %>%
+  arrange(rua, desc(ano), desc(mes)) %>%
+  filter(((ano == 2023 & mes <= 9) | ano != 2023)) %>%
+  mutate(acidentes = replace_na(acidentes, 0),
+         acidentes_mm = rollapply(acidentes, 3, mean, align = "left", fill = NA),
+         acidentes = ifelse(ano == 2023 & mes == 3, lead(acidentes_mm), acidentes)) %>%
+  select(-acidentes_mm) %>%
+  group_by(rua) %>%
+  mutate(acidentes_hp = mFilter::hpfilter(acidentes, freq = 2)$trend) %>%
   ungroup()
 
-df %>% 
-  filter(rua == "AVENIDA DOS BANDEIRANTES") %>% 
-  ggplot(aes(x = data)) +
-  geom_line(aes(y = acidentes)) +
-  geom_line(aes(y = acidentes_mm), linetype = "dashed") +
-  labs(y = "Acidentes", title = "AVENIDA DOS BANDEIRANTES") +
-  theme(legend.position = "none")
+# df <- data.frame(ano = c(2019:2023), 
+#                  mes = rep(c(1:12), each = 5), 
+#                  rua = rep(avenidas, each = 5*12)) %>% 
+#   as_tibble() %>% 
+#   mutate(bimestre = case_when(mes == 1 | mes == 2 ~ 1,
+#                               mes == 3 | mes == 4 ~ 2,
+#                               mes == 5 | mes == 6 ~ 3,
+#                               mes == 7 | mes == 8 ~ 4,
+#                               mes == 9 | mes == 10 ~ 5,
+#                               mes == 11 | mes == 12 ~ 6,
+#   )) %>%
+#   left_join(df) %>% 
+#   filter(((ano == 2023 & bimestre <= 4) | ano != 2023)) %>% 
+#   mutate(acidentes = replace_na(acidentes, 0),
+#          acidentes_mm = rollapply(acidentes, 3, mean, align = "left", fill = NA),
+#          acidentes = ifelse(ano == 2023 & mes == 3, lead(acidentes_mm), acidentes)) %>% 
+#   select(-acidentes_mm) %>% 
+#   group_by(rua, ano, bimestre) %>% 
+#   summarize(acidentes = sum(acidentes)) %>% 
+#   arrange(rua, desc(ano), desc(bimestre)) %>% 
+#   group_by(rua) %>% 
+#   mutate(acidentes_hp = mFilter::hpfilter(acidentes, freq = 6)$trend) %>% 
+#   ungroup()
 
-df %>% 
-  filter(rua == "AVENIDA VINTE E TRES DE MAIO") %>% 
-  ggplot(aes(x = data)) +
-  geom_line(aes(y = acidentes_mm), linetype = "dashed") +
-  geom_line(aes(y = acidentes)) +
-  labs(y = "Acidentes", title = "AVENIDA VINTE E TRES DE MAIO") +
-  theme(legend.position = "none")
+df <- df %>% 
+  arrange(rua, ano, mes) %>% 
+  group_by(rua) %>% 
+  mutate(mean_t0 = ifelse((ano == 2022 & mes <= 8) | ano != 2022, acidentes, NA),
+         acidentes_t0 = acidentes - mean(mean_t0, na.rm = T),
+         acidentes_lag = lag(acidentes),
+         acidentes_delta = acidentes - acidentes_lag,
+         acidentes_sqrt = sqrt(acidentes)) %>% 
+  select(rua, ano, mes, acidentes, acidentes_delta, acidentes_sqrt, acidentes_t0)
 
 df.prep <- df %>% 
   group_by(rua) %>% 
@@ -51,183 +79,53 @@ df.prep <- df %>%
   mutate(id = cumsum(id)) %>% 
   right_join(df) %>% 
   mutate(mes = mes/12,
-         ano = ano + mes) %>% 
+         ano = round(ano + mes, 3)) %>% 
   as.data.frame()
 
-df.prep <- df.prep %>% 
-  semi_join(df.prep %>% 
-              group_by(id) %>% 
-              summarize(n = n()) %>% 
-              filter(n == 56)) %>% 
-  mutate(ano = ano %>% round(3))
-
 dataprep_out <- dataprep(
-  foo = df.prep,
-  predictors = c("acidentes"),
-  time.predictors.prior = seq(2019 + 11/12, 2022 + 8/12, by = 1/12) %>% round(3),
+  foo = df.prep %>% 
+    select(id, rua, ano, resposta = acidentes_t0) %>% 
+    drop_na(),
+  predictors = c("resposta"),
+  time.predictors.prior = seq(2019 + 2/12, 2022 + 8/12, by = 1/12) %>% round(3),
   predictors.op = "mean",
-  dependent = "acidentes",
+  dependent = "resposta",
   unit.variable = "id",
   unit.names.variable = "rua",
   time.variable = "ano",
   treatment.identifier = 9,
-  controls.identifier = c(2:4, 8, 12, 14, 15, 18, 20, 21, 24, 25, 26, 28, 29 ,30),
-  time.optimize.ssr = seq(2019 + 11/12, 2022 + 8/12, by = 1/12) %>% round(3),
-  time.plot = seq(2019 + 11/12, 2023 + 2/12, by = 1/12) %>% round(3)
+  controls.identifier = c(1:8, 10:31),
+  time.optimize.ssr = seq(2019 + 2/12, 2022 + 8/12, by = 1/12) %>% round(3),
+  time.plot = seq(2019 + 2/12, 2023 + 9/12, by = 1/12) %>% round(3)
 )
+
+# dataprep_out <- dataprep(
+#   foo = df.prep,
+#   predictors = c("acidentes_hp"),
+#   time.predictors.prior = seq(2019 + 1/6, 2022 + 3/6, by = 1/6) %>% round(3),
+#   predictors.op = "mean",
+#   dependent = "acidentes_hp",
+#   unit.variable = "id",
+#   unit.names.variable = "rua",
+#   time.variable = "ano",
+#   treatment.identifier = 9,
+#   controls.identifier = c(1:8, 10:31),
+#   time.optimize.ssr = seq(2019 + 1/6, 2022 + 3/6, by = 1/6) %>% round(3),
+#   time.plot = seq(2019 + 1/6, 2023 + 4/6, by = 1/6) %>% round(3)
+# )
 
 synth_out <- synth(data.prep.obj = dataprep_out)
 
 path.plot(synth_out, dataprep_out)
 
 
-#RASCUNHO ----
-library(tidyverse)
-library(haven)
-library(Synth)
-library(devtools)
-library(SCtools)
+acf(df %>%
+      group_by(ano, mes) %>%
+      summarize(acidentes = sum(acidentes)) %>% 
+      pull(acidentes))
 
-read_data <- function(df)
-{
-  full_path <- paste("https://github.com/scunning1975/mixtape/raw/master/", 
-                     df, sep = "")
-  df <- read_dta(full_path)
-  return(df)
-}
+pacf(df %>%
+      filter(rua == "AVENIDA DOS BANDEIRANTES", ano == 2022) %>% 
+      pull(acidentes))
 
-texas <- read_data("texas.dta") %>%
-  as.data.frame(.)
-
-dataprep_out <- dataprep(
-  foo = texas,
-  predictors = c("poverty", "income"),
-  predictors.op = "mean",
-  time.predictors.prior = 1985:1993,
-  special.predictors = list(
-    list("bmprison", c(1988, 1990:1992), "mean"),
-    list("alcohol", 1990, "mean"),
-    list("aidscapita", 1990:1991, "mean"),
-    list("black", 1990:1992, "mean"),
-    list("perc1519", 1990, "mean")),
-  dependent = "bmprison",
-  unit.variable = "statefip",
-  unit.names.variable = "state",
-  time.variable = "year",
-  treatment.identifier = 48,
-  controls.identifier = c(1,2,4:6,8:13,15:42,44:47,49:51,53:56),
-  time.optimize.ssr = 1985:1993,
-  time.plot = 1985:2000
-)
-
-synth_out <- synth(data.prep.obj = dataprep_out)
-
-path.plot(synth_out, dataprep_out)
-
-#Acidentes fatais ----
-
-df.original <- data.table::fread("dados/obitos_publico.csv", encoding = "Latin-1")
-
-df <- df.original %>% 
-  as_tibble() %>% 
-  select(data = "Data do Acidente", rua = "Logradouro",
-         veiculo = "Tipo do veículo da vítima") %>% 
-  filter(rua %in% avenidas) %>% 
-  mutate(motocicleta = veiculo == "MOTOCICLETA")  %>% 
-  mutate(ano = year(data),
-         mes = month(data)) %>% 
-  group_by(ano, mes, rua) %>% 
-  summarize(acidentes = sum(motocicleta)) %>%
-  mutate(data = as_date(year_month_day(ano, mes, 1))) %>% 
-  arrange(rua, desc(data))
-
-df %>% 
-  filter(rua == "AVENIDA DOS BANDEIRANTES") %>% 
-  ggplot(aes(x = data)) +
-  geom_line(aes(y = acidentes), linetype = "dashed") +
-  geom_line(aes(y = acidentes)) +
-  theme(legend.position = "none")
-
-df.prep <- df %>% 
-  group_by(rua) %>% 
-  summarize(id = 1) %>% 
-  mutate(id = cumsum(id)) %>% 
-  right_join(df) %>% 
-  mutate(mes = mes/12,
-         ano = ano + mes) %>% 
-  as.data.frame() 
-
-df.prep %>% 
-  group_by(id) %>% 
-  summarize(n = n()) %>% 
-  View()
-
-
-df.prep <- df.prep %>% 
-  semi_join(df.prep %>% 
-              group_by(id) %>% 
-              summarize(n = n()) %>% 
-              filter(n == 56)) %>% 
-  mutate(ano = ano %>% round(3))
-
-dataprep_out <- dataprep(
-  foo = df.prep,
-  predictors = c("acidentes"),
-  time.predictors.prior = seq(2019 + 11/12, 2022 + 8/12, by = 1/12) %>% round(3),
-  predictors.op = "mean",
-  dependent = "acidentes",
-  unit.variable = "id",
-  unit.names.variable = "rua",
-  time.variable = "ano",
-  treatment.identifier = 9,
-  controls.identifier = c(2:4, 8, 12, 14, 15, 18, 20, 21, 24, 25, 26, 28, 29 ,30),
-  time.optimize.ssr = seq(2019 + 11/12, 2022 + 8/12, by = 1/12) %>% round(3),
-  time.plot = seq(2019 + 11/12, 2023 + 2/12, by = 1/12) %>% round(3)
-)
-
-synth_out <- synth(data.prep.obj = dataprep_out)
-
-path.plot(synth_out, dataprep_out)
-
-library(tidyverse)
-library(haven)
-library(Synth)
-library(devtools)
-library(SCtools)
-
-read_data <- function(df)
-{
-  full_path <- paste("https://github.com/scunning1975/mixtape/raw/master/", 
-                     df, sep = "")
-  df <- read_dta(full_path)
-  return(df)
-}
-
-texas <- read_data("texas.dta") %>%
-  as.data.frame(.)
-
-dataprep_out <- dataprep(
-  foo = texas,
-  predictors = c("poverty", "income"),
-  predictors.op = "mean",
-  time.predictors.prior = 1985:1993,
-  special.predictors = list(
-    list("bmprison", c(1988, 1990:1992), "mean"),
-    list("alcohol", 1990, "mean"),
-    list("aidscapita", 1990:1991, "mean"),
-    list("black", 1990:1992, "mean"),
-    list("perc1519", 1990, "mean")),
-  dependent = "bmprison",
-  unit.variable = "statefip",
-  unit.names.variable = "state",
-  time.variable = "year",
-  treatment.identifier = 48,
-  controls.identifier = c(1,2,4:6,8:13,15:42,44:47,49:51,53:56),
-  time.optimize.ssr = 1985:1993,
-  time.plot = 1985:2000
-)
-
-synth_out <- synth(data.prep.obj = dataprep_out)
-
-path.plot(synth_out, dataprep_out)
 
