@@ -1,7 +1,5 @@
 library(tidyverse)
 
-avenidas <- c('AVENIDA VEREADOR JOAO DE LUCA', 'AVENIDA GENERAL ATALIBA LEONEL', 'AVENIDA IBIRAPUERA', 'AVENIDA PROFESSOR ABRAAO DE MORAIS', 'AVENIDA CARLOS CALDEIRA FILHO', 'AVENIDA ENGENHEIRO CAETANO ALVARES', 'AVENIDA CORIFEU DE AZEVEDO MARQUES', 'AVENIDA CELSO GARCIA', 'AVENIDA MORUMBI', 'AVENIDA SANTO AMARO', 'RUA VERGUEIRO', 'AVENIDA INAJAR DE SOUZA', 'AVENIDA JOAO DIAS', 'ACESSO RADIAL LESTE  CENTRO', 'AVENIDA NOVE DE JULHO', 'AVENIDA REBOUCAS', 'AVENIDA BRIGADEIRO LUIS ANTONIO', 'AVENIDA RAIMUNDO PEREIRA DE MAGALHAES', 'AVENIDA SALIM FARAH MALUF', 'AVENIDA ATLANTICA', 'AVENIDA PROFESSOR FRANCISCO MORATO', 'AVENIDA GUARAPIRANGA', 'AVENIDA PROFESSOR LUIZ IGNACIO ANHAIA MELLO', 'AVENIDA VINTE E TRES DE MAIO', 'AVENIDA DO ESTADO', 'AVENIDA DOS BANDEIRANTES', 'AVENIDA INTERLAGOS', 'AVENIDA WASHINGTON LUIS', 'AVENIDA ARICANDUVA', 'ESTRADA DE ITAPECERICA', 'AVENIDA SENADOR TEOTONIO VILELA')
-
 #Não fatais ----
 
 df.original <- data.table::fread("dados/acidentes_naofatais.csv", encoding = "Latin-1")
@@ -100,36 +98,7 @@ resultado <- data.frame(list(rua = dataprep_out[["names.and.numbers"]][["unit.na
                              peso = synth_out[["solution.w"]] %>% round(4))) %>% 
   arrange(desc(w.weight))
 
-#Controle sintetico 23 de maio ----
-dataprep_out_23 <- Synth::dataprep(
-  foo = df.prep %>% 
-    select(id, rua, ano, resposta = acidentes_hp) %>% 
-    drop_na(),
-  predictors = c("resposta"),
-  special.predictors = list(list("resposta", seq(2019 + 1/12, 2020 + 1/12, by = 1/12) %>% round(3), "mean"),
-                            list("resposta", seq(2020 + 1/12, 2021 + 1/12, by = 1/12) %>% round(3), "mean"),
-                            list("resposta", seq(2020 + 1/12, 2021 + 1/12, by = 1/12) %>% round(3), "mean"),
-                            list("resposta", seq(2021 + 1/12, 2022 + 1/12, by = 1/12) %>% round(3), "mean")),
-  time.predictors.prior = seq(2019 + 2/12, 2022 + 8/12, by = 1/12) %>% round(3),
-  predictors.op = "mean",
-  dependent = "resposta",
-  unit.variable = "id",
-  unit.names.variable = "rua",
-  time.variable = "ano",
-  treatment.identifier = 85,
-  controls.identifier = c(1:84, 86:111),
-  time.optimize.ssr = seq(2019 + 2/12, 2021 + 11/12, by = 1/12) %>% round(3),
-  time.plot = seq(2019 + 2/12, 2023 + 9/12, by = 1/12) %>% round(3)
-)
-
-synth_out_23 <- Synth::synth(data.prep.obj = dataprep_out_23)
-
-Synth::path.plot(synth_out_23, dataprep_out_23)
-abline(v=2021+11/12, col="blue")
-
-resultado_23 <- data.frame(list(rua = dataprep_out_23[["names.and.numbers"]][["unit.names"]][2:111],
-                                     peso = synth_out_23[["solution.w"]] %>% round(4))) %>% 
-  arrange(desc(w.weight))
+Synth::gaps.plot(synth_out, dataprep_out, tr.intake = 2022 + 8/12)
 
 #Teste placebo  ----
 dataprep_out.placebo <- Synth::dataprep(
@@ -162,6 +131,81 @@ abline(v=2022+8/12, col="blue")
 resultado.placebo <- data.frame(list(rua = dataprep_out.placebo[["names.and.numbers"]][["unit.names"]][2:111],
                                      peso = synth_out.placebo[["solution.w"]] %>% round(4))) %>% 
   arrange(desc(w.weight))
+
+#Teste placebo "vassoura" ----
+tdf <- SCtools::generate.placebos(dataprep_out, synth_out, Sigf.ipop = 2, strategy = "multicore")
+
+# plot_placebos(placebos, discard.extreme = TRUE, mspe.limit = 4) +
+#   geom_vline(xintercept = 2022 + 8/12)
+
+mspe.limit <- 4
+n<-tdf$n
+tr<-tdf$tr
+names.and.numbers<-tdf$names.and.numbers
+treated.name<-as.character(tdf$treated.name)
+df.plot<-NULL
+for(i in 1:n){
+  a<-cbind(tdf$df$year,tdf$df[,i],tdf$df[,n+i],i)
+  df.plot<-rbind(df.plot, a)
+}
+df.plot<-data.frame(df.plot)
+colnames(df.plot)<-c('year','cont','tr','id')
+           
+df.plot <- df.plot %>% 
+  left_join(data.frame(mspe = c(tdf$mspe.placs/tdf$loss.v[1]), 
+                       id = c(1:(tr-1), (tr+1):(i+1))) %>% 
+              select(id = id, mspe = unlist.mspe.placs.)) %>% 
+  filter(mspe < mspe.limit)
+
+# bandeirantes_pre_tratamento <- data.frame(tdf$df) %>% 
+#   mutate(x = year, y=(Y1-synthetic.Y1)) %>% 
+#   filter(year < (2022 + 9/12) %>% round(3)) %>% 
+#   summarize(dist = sum(y^2)) %>% 
+#   pull(dist)
+
+# df.plot %>% 
+#   as_tibble() %>% 
+#   ggplot(aes(x=year, y=(tr-cont)))+
+#   geom_line(aes(group=id, color='2'))+
+#   geom_vline(xintercept = 2022 + 9/12, linetype = "dotted") +
+#   geom_hline(yintercept = 0, linetype = 'dashed')+ 
+#   geom_line(data=data.frame(tdf$df), aes(x = year, y=(Y1-synthetic.Y1), color='1'), alpha=1) + 
+#   ylim(c(-1.25,1.25)) +
+#   labs(y=NULL, x=NULL, title=NULL)+
+#   scale_color_manual(values = c('2' = 'gray80', '1' = 'black'),
+#                      labels = c('Control units',tdf$treated.name), 
+#                      guide = ggplot2::guide_legend(NULL))+
+#   theme(panel.background = element_blank(), 
+#         panel.grid.major = element_blank(),
+#         panel.grid.minor=element_blank(),
+#         axis.line.x = element_line(colour = 'black'),
+#         axis.line.y = element_line(colour = 'black'),
+#         legend.key = element_blank(),
+#         axis.text.x = element_text(colour = 'black'),
+#         axis.text.y = element_text(colour = 'black'),
+#         legend.position='bottom')
+
+df.plot %>% 
+  as_tibble() %>% 
+  ggplot(aes(x=year, y=(tr-cont)))+
+  geom_line(aes(group=id, color = mspe), alpha = 0.75)+
+  geom_vline(xintercept = 2022 + 9/12, linetype = "dotted") +
+  geom_hline(yintercept = 0, linetype = 'dashed')+ 
+  geom_line(data=data.frame(tdf$df), aes(x = year, y=(Y1-synthetic.Y1)), 
+            lwd = 1.25) + 
+  ylim(c(-1.25,1.25)) +
+  scale_color_gradient(low = "black", high = "white", limits = c(0,mspe.limit)) +
+  labs(y=NULL, x=NULL, title=NULL)+
+  theme(panel.background = element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor=element_blank(),
+        axis.line.x = element_line(colour = 'black'),
+        axis.line.y = element_line(colour = 'black'),
+        legend.key = element_blank(),
+        axis.text.x = element_text(colour = 'black'),
+        axis.text.y = element_text(colour = 'black'),
+        legend.position='bottom')
+
 
 
 
