@@ -22,12 +22,27 @@ df <- df.original %>%
 df %>% 
   group_by(rua) %>%
   summarize(acidentes = sum(acidentes)) %>%
-  filter(acidentes > 100) %>% 
   ggplot() +
-  geom_density(aes(acidentes))
+  geom_density(aes(acidentes)) +
+  scale_x_continuous(trans = "sqrt")
 
+df %>% 
+  filter(rua == "AVENIDA DOS BANDEIRANTES") %>% 
+  mutate(data = zoo::yearmon(ano + (mes - 1)/12)) %>% 
+  ggplot(aes(x = data)) +
+  geom_line(aes(y = acidentes)) + 
+  geom_line(aes(y = acidentes_hp ^ 2), linetype = "dashed")
 
-df <- data.frame(ano = c(2019:2023),
+df %>% 
+  filter(ano != 2023) %>% 
+  group_by(mes) %>% 
+  summarize(acidentes = sum(acidentes)) %>% 
+  ggplot(aes(y = factor(mes), x = acidentes)) +
+  geom_col()
+
+forecast::auto.arima(df %>% filter(rua == "AVENIDA DOS BANDEIRANTES") %>% pull(acidentes))
+
+  df <- data.frame(ano = c(2019:2023),
                  mes = rep(c(1:12), each = 5),
                  rua = rep(df %>% 
                              group_by(rua) %>%
@@ -45,7 +60,7 @@ df <- data.frame(ano = c(2019:2023),
          acidentes = ifelse(ano == 2023 & mes == 3, lead(acidentes_mm), acidentes)) %>%
   select(-acidentes_mm) %>%
   group_by(rua) %>%
-  mutate(acidentes_hp = mFilter::hpfilter(sqrt(acidentes), freq = 144)$trend) %>%
+  mutate(acidentes_hp = mFilter::hpfilter(sqrt(acidentes), freq = 144)$trend[,1]) %>%
   ungroup()
 
 df <- df %>% 
@@ -83,8 +98,8 @@ dataprep_out <- Synth::dataprep(
   unit.variable = "id",
   unit.names.variable = "rua",
   time.variable = "ano",
-  treatment.identifier = 26,
-  controls.identifier = c(1:25, 27:111),
+  treatment.identifier = 28,
+  controls.identifier = c(1:27, 29:113),
   time.optimize.ssr = seq(2019 + 2/12, 2022 + 8/12, by = 1/12) %>% round(3),
   time.plot = seq(2019 + 2/12, 2023 + 9/12, by = 1/12) %>% round(3)
 )
@@ -92,9 +107,53 @@ dataprep_out <- Synth::dataprep(
 synth_out <- Synth::synth(data.prep.obj = dataprep_out)
 
 Synth::path.plot(synth_out, dataprep_out)
+
+data.frame(sintetico = dataprep_out$Y0plot %*% synth_out$solution.w,
+           data = dataprep_out$tag$time.plot,
+           band = dataprep_out$Y1plot) %>% 
+  as_tibble() %>% 
+  select(data, bandeirantes = X28, sintetico = w.weight) %>% 
+  mutate(across(c(bandeirantes, sintetico), ~ .^2),
+         fill = sintetico > bandeirantes,
+         ymax = ifelse(fill == TRUE, sintetico, bandeirantes),
+         ymin = ifelse(fill == FALSE, sintetico, bandeirantes)) %>% 
+  ggplot(aes(x = data)) +
+  annotate("rect", xmin = 2022 + 8/12, xmax = 2023 + 9/12, ymin = 5, ymax = 15, fill = "grey", alpha =.25) +
+  geom_line(aes(y = sintetico), linetype = "dashed") +
+  geom_line(aes(y = bandeirantes)) +
+  geom_vline(xintercept = 2022 + 8/12, alpha = .25, linetype = "dotted") +
+  scale_y_continuous(limits = c(5,15), trans = "sqrt") +
+  labs(x = "Tempo", y = "Número de acidentes por mês", title = "Comparação Bandeirantes vs Controle Sintético") +
+  theme_bw()
+  
+  # geom_ribbon(aes(ymin = ymin, ymax = ymax, fill = fill))
+
+y0plot1 <- dataprep.res$Y0plot %*% synth.res$solution.w                
+
+plot(
+  dataprep.res$tag$time.plot
+  ,dataprep.res$Y1plot,
+  t="l",
+  col="black",
+  lwd=2,
+  main=Main,
+  ylab=Ylab,
+  xlab=Xlab,xaxs="i",yaxs="i",ylim=Ylim)
+
+lines(
+  dataprep.res$tag$time.plot,
+  y0plot1 ,
+  col="black",
+  lty="dashed",
+  lwd=2,
+  cex=4/5
+      )
+      
+
+
 abline(v=2022+8/12, col="blue")
 
-resultado <- data.frame(list(rua = dataprep_out[["names.and.numbers"]][["unit.names"]][2:111],
+resultado <- data.frame(list(rua = dataprep_out[["names.and.numbers"]][["unit.names"]][2:113],
                              peso = synth_out[["solution.w"]] %>% round(4))) %>% 
   arrange(desc(w.weight))
 
