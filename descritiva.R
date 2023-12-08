@@ -1,12 +1,17 @@
 library(tidyverse)
 library(sf)
+library(units)
 
 df.original <- data.table::fread("dados/acidentes_naofatais.csv", encoding = "Latin-1")
 
 geometria <- geobr::read_municipality(code_muni = 3550308)
 
 bairros <- geobr::read_neighborhood() %>% 
-  filter(code_muni == 3550308)
+  filter(code_muni == 3550308) %>% 
+  select(code_district, bairros = geom)
+
+bairros <- bairros %>% 
+  select(code_district, bairros = geom)
 
 df <- df.original %>%
   as_tibble() %>% 
@@ -78,25 +83,46 @@ df %>%
 
 ggsave("output/qqplot.png", width = 4, height = 4, dpi = 600)
 
-df %>% 
+# ----
+pontos <- df %>% 
   filter(nm_municipio == "SAO PAULO",
          lubridate::year(data) == 2023) %>% 
   mutate(latitude = str_replace_all(latitude, ",", ".") %>% as.numeric(),
          longitude = str_replace_all(longitude, ",", ".") %>% as.numeric()) %>% 
   drop_na(longitude, latitude) %>% 
   filter(abs(latitude) < 100, abs(longitude) < 100) %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>% 
-  mutate(lon = sf::st_coordinates(.)[,2],
-         lat = sf::st_coordinates(.)[,1]) %>% 
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4269) %>% 
+  select(pontos = geometry)
+
+temp <- bairros %>% 
+  mutate(bairros = st_set_crs(bairros, 4269),
+         area = st_area(bairros)) %>% 
+  st_join(pontos) %>% 
+  count(code_district) %>% 
+  as_tibble() %>% 
+  left_join(bairros %>% 
+              mutate(area = st_area(bairros) %>% set_units(km^2)) %>%
+              as_tibble() %>% 
+              select(code_district, area)) %>% 
+  mutate(acidentes_km2 = (n / area) %>% as.numeric()) %>% 
   ggplot() +
-  geom_sf(data = bairros) +
-  geom_point(aes(y = lon, x = lat), alpha = .1, size = .75) +
+  geom_sf(aes(fill = acidentes_km2, geometry = bairros), color = "white", lwd = .75) +
+  # geom_sf(data = pontos, alpha = .05, color = "black", size = .75) +
+  scale_fill_viridis_c() +
+  labs(fill = "Acidentes por km^2") +
+  theme_void()
+
+ggsave("output/mapa_bairros.png", width = 10, height = 10, dpi = 600)
+
+ggplot() +
+  geom_sf(data = bairros, color = "white", lwd = 1) +
+  geom_sf(data = pontos, alpha = .1, size = .75) +
   # geom_density2d_filled(aes(y = lon, x = lat), alpha = .5) +
   # scale_fill_viridis_d() +
   # geom_point(aes(x = longitude, y = latitude), alpha = .25) +
   theme_void()
 
-ggsave("output/mapa.png", height = 12, width = 12, dpi = 600)
+ggsave("output/mapa_pontos.png", height = 10, width = 10, dpi = 600)
 
 df %>% 
   filter(nm_municipio == "SAO PAULO") %>%
