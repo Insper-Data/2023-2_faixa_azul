@@ -4,7 +4,9 @@ library(tidyverse)
 
 df.original <- data.table::fread("dados/acidentes_naofatais.csv", encoding = "Latin-1")
 
-df <- df.original %>%
+## preprocessamento para utilizar dados do infosiga que contenham um sinistro com vítima em que uma motocicleta
+## estava envolvida na cidade de São Paulo
+df.preprocessado <- df.original %>%
   as_tibble() %>% 
   select(nm_municipio = Município,
          data = "Data do Acidente", rua = "Logradouro", id = ID,
@@ -19,32 +21,30 @@ df <- df.original %>%
   group_by(ano, mes, rua) %>% 
   summarize(acidentes = sum(motocicleta))
 
-df %>% 
+
+## plot para visualizar a distribuição da quantidade de sinistros em cada rua
+df.preprocessado %>%
   group_by(rua) %>%
   summarize(acidentes = sum(acidentes)) %>%
   ggplot() +
   geom_density(aes(acidentes)) +
   scale_x_continuous(trans = "sqrt")
 
-df %>% 
-  filter(rua == "AVENIDA DOS BANDEIRANTES") %>% 
-  mutate(data = zoo::yearmon(ano + (mes - 1)/12)) %>% 
-  ggplot(aes(x = data)) +
-  geom_line(aes(y = acidentes)) + 
-  geom_line(aes(y = acidentes_hp ^ 2), linetype = "dashed")
-
-df %>% 
-  filter(ano != 2023) %>% 
-  group_by(mes) %>% 
-  summarize(acidentes = sum(acidentes)) %>% 
+## plot para apresentar um histograma da quantidade de sinistros em cada mês em busca de analisar possível 
+## sazonalidade do fenômeno
+df.preprocessado %>%
+  filter(ano != 2023) %>%
+  group_by(mes) %>%
+  summarize(acidentes = sum(acidentes)) %>%
   ggplot(aes(y = factor(mes), x = acidentes)) +
   geom_col()
 
-forecast::auto.arima(df %>% filter(rua == "AVENIDA DOS BANDEIRANTES") %>% pull(acidentes))
-
+  ## Aqui é criado o dataframe que será empregado nas análises
+  ## Primeiramente é criado um dataframe com cada ano e mês de interesse (entre 2019 e a data mais atual)
+  ## com cada uma das ruas que apresentaram mais de 100 sinistros ao longo desse periodo
   df <- data.frame(ano = c(2019:2023),
                  mes = rep(c(1:12), each = 5),
-                 rua = rep(df %>% 
+                 rua = rep(df.preprocessado %>% 
                              group_by(rua) %>%
                              summarize(acidentes = sum(acidentes)) %>% 
                              filter(acidentes > 100) %>% 
@@ -52,26 +52,32 @@ forecast::auto.arima(df %>% filter(rua == "AVENIDA DOS BANDEIRANTES") %>% pull(a
                              pull(rua), 
                            each = 5*12)) %>%
   as_tibble() %>%
-  left_join(df) %>%
+  ## aqui é realizada a inserção dos dados do infosiga preprocessados anteriormente
+  left_join(df.preprocessado) %>%
   arrange(rua, desc(ano), desc(mes)) %>%
-  filter(((ano == 2023 & mes <= 9) | ano != 2023)) %>%
+  filter(((ano == 2023 & mes <= 9) | ano != 2023)) %>% ## seleciona até o dado mais atual
+  ## o mutate abaixo serve para substituir o dado faltante de 03/2023 em que não foram registrados
+  ## ocorrências na base (ainda que tenham ocorrido sinistros no período)
+  ## para tanto, foi realizada a substituição pela média dos três meses anteriores
   mutate(acidentes = replace_na(acidentes, 0),
          acidentes_mm = zoo::rollapply(acidentes, 3, mean, align = "left", fill = NA),
          acidentes = ifelse(ano == 2023 & mes == 3, lead(acidentes_mm), acidentes)) %>%
   select(-acidentes_mm) %>%
+  ## por fim os dados são agrupados para cada rua e é aplicado o filtro HP com freq apropriada para dados mensais
+  ## e recuperamos o valor de tendencia (uma das componentes retornadas pela função)
   group_by(rua) %>%
   mutate(acidentes_hp = mFilter::hpfilter(sqrt(acidentes), freq = 144)$trend[,1]) %>%
   ungroup()
-
-df <- df %>% 
-  arrange(rua, ano, mes) %>% 
-  group_by(rua) %>% 
-  mutate(mean_t0 = ifelse((ano == 2022 & mes <= 8) | ano != 2022, acidentes, NA),
-         acidentes_t0 = acidentes - mean(mean_t0, na.rm = T),
-         acidentes_lag = lag(acidentes),
-         acidentes_delta = acidentes - acidentes_lag,
-         acidentes_sqrt = sqrt(acidentes)) %>% 
-  select(rua, ano, mes, acidentes, acidentes_delta, acidentes_sqrt, acidentes_t0, acidentes_hp)
+  
+  ## plot de comparação dos dados da Av. dos Bandeirantes com e sem a aplicação do filtro HP
+  df %>% 
+    filter(rua == "AVENIDA DOS BANDEIRANTES") %>% 
+    mutate(data = zoo::yearmon(ano + (mes - 1)/12)) %>% 
+    ggplot(aes(x = data)) +
+    geom_line(aes(y = acidentes)) + 
+    geom_line(aes(y = acidentes_hp ^ 2), linetype = "dashed")
+    
+  ggsave("teste.png", dpi = 600, width = 8, height = 6)
 
 df.prep <- df %>% 
   group_by(rua) %>% 
@@ -106,8 +112,10 @@ dataprep_out <- Synth::dataprep(
 
 synth_out <- Synth::synth(data.prep.obj = dataprep_out)
 
+## plot simples para controle sintético (fornecido pela biblioteca)
 Synth::path.plot(synth_out, dataprep_out)
 
+## plot de comparação da Bandeirantes real e sintética
 data.frame(sintetico = dataprep_out$Y0plot %*% synth_out$solution.w,
            data = dataprep_out$tag$time.plot,
            band = dataprep_out$Y1plot) %>% 
@@ -152,7 +160,7 @@ lines(
 
 
 abline(v=2022+8/12, col="blue")
-
+### Tabela com os coeficientes de cada componente do controle sintetico
 resultado <- data.frame(list(rua = dataprep_out[["names.and.numbers"]][["unit.names"]][2:113],
                              peso = synth_out[["solution.w"]] %>% round(4))) %>% 
   arrange(desc(w.weight))
