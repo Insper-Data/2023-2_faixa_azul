@@ -39,45 +39,48 @@ df.preprocessado %>%
   ggplot(aes(y = factor(mes), x = acidentes)) +
   geom_col()
 
-  ## Aqui é criado o dataframe que será empregado nas análises
-  ## Primeiramente é criado um dataframe com cada ano e mês de interesse (entre 2019 e a data mais atual)
-  ## com cada uma das ruas que apresentaram mais de 100 sinistros ao longo desse periodo
-  df <- data.frame(ano = c(2019:2023),
-                 mes = rep(c(1:12), each = 5),
-                 rua = rep(df.preprocessado %>% 
-                             group_by(rua) %>%
-                             summarize(acidentes = sum(acidentes)) %>% 
-                             filter(acidentes > 100) %>% 
-                             distinct(rua) %>% 
-                             pull(rua), 
-                           each = 5*12)) %>%
-  as_tibble() %>%
-  ## aqui é realizada a inserção dos dados do infosiga preprocessados anteriormente
-  left_join(df.preprocessado) %>%
-  arrange(rua, desc(ano), desc(mes)) %>%
-  filter(((ano == 2023 & mes <= 9) | ano != 2023)) %>% ## seleciona até o dado mais atual
-  ## o mutate abaixo serve para substituir o dado faltante de 03/2023 em que não foram registrados
-  ## ocorrências na base (ainda que tenham ocorrido sinistros no período)
-  ## para tanto, foi realizada a substituição pela média dos três meses anteriores
-  mutate(acidentes = replace_na(acidentes, 0),
-         acidentes_mm = zoo::rollapply(acidentes, 3, mean, align = "left", fill = NA),
-         acidentes = ifelse(ano == 2023 & mes == 3, lead(acidentes_mm), acidentes)) %>%
-  select(-acidentes_mm) %>%
-  ## por fim os dados são agrupados para cada rua e é aplicado o filtro HP com freq apropriada para dados mensais
-  ## e recuperamos o valor de tendencia (uma das componentes retornadas pela função)
-  group_by(rua) %>%
-  mutate(acidentes_hp = mFilter::hpfilter(sqrt(acidentes), freq = 144)$trend[,1]) %>%
-  ungroup()
+## Aqui é criado o dataframe que será empregado nas análises
+## Primeiramente é criado um dataframe com cada ano e mês de interesse (entre 2019 e a data mais atual)
+## com cada uma das ruas que apresentaram mais de 100 sinistros ao longo desse periodo
+df <- data.frame(ano = c(2019:2023),
+               mes = rep(c(1:12), each = 5),
+               rua = rep(df.preprocessado %>% 
+                           group_by(rua) %>%
+                           summarize(acidentes = sum(acidentes)) %>% 
+                           filter(acidentes > 100) %>% 
+                           distinct(rua) %>% 
+                           pull(rua), 
+                         each = 5*12)) %>%
+as_tibble() %>%
+## aqui é realizada a inserção dos dados do infosiga preprocessados anteriormente
+left_join(df.preprocessado) %>%
+arrange(rua, desc(ano), desc(mes)) %>%
+filter(((ano == 2023 & mes <= 9) | ano != 2023)) %>% ## seleciona até o dado mais atual
+## o mutate abaixo serve para substituir o dado faltante de 03/2023 em que não foram registrados
+## ocorrências na base (ainda que tenham ocorrido sinistros no período)
+## para tanto, foi realizada a substituição pela média dos três meses anteriores
+mutate(acidentes = replace_na(acidentes, 0),
+       acidentes_mm = zoo::rollapply(acidentes, 3, mean, align = "left", fill = NA),
+       acidentes = ifelse(ano == 2023 & mes == 3, lead(acidentes_mm), acidentes)) %>%
+select(-acidentes_mm) %>%
+## por fim os dados são agrupados para cada rua e é aplicado o filtro HP com freq apropriada para dados mensais
+## e recuperamos o valor de tendencia (uma das componentes retornadas pela função)
+group_by(rua) %>%
+mutate(acidentes_hp = mFilter::hpfilter(sqrt(acidentes), freq = 144)$trend[,1]) %>%
+ungroup()
+
+## plot de comparação dos dados da Av. dos Bandeirantes com e sem a aplicação do filtro HP
+df %>% 
+  filter(rua == "AVENIDA DOS BANDEIRANTES") %>% 
+  mutate(data = zoo::yearmon(ano + (mes - 1)/12)) %>% 
+  ggplot(aes(x = data)) +
+  geom_line(aes(y = acidentes, linetype = "Sinistros")) + 
+  geom_line(aes(y = acidentes_hp ^ 2, linetype = "Sinistros (filtro HP)")) + 
+  scale_linetype_manual(values = c("Sinistros" = "solid", "Sinistros (filtro HP)" = "dashed")) + 
+  labs(x = "Data", y="Quantidade de sinistros", linetype = "")
   
-  ## plot de comparação dos dados da Av. dos Bandeirantes com e sem a aplicação do filtro HP
-  df %>% 
-    filter(rua == "AVENIDA DOS BANDEIRANTES") %>% 
-    mutate(data = zoo::yearmon(ano + (mes - 1)/12)) %>% 
-    ggplot(aes(x = data)) +
-    geom_line(aes(y = acidentes)) + 
-    geom_line(aes(y = acidentes_hp ^ 2), linetype = "dashed")
-    
-  ggsave("teste.png", dpi = 600, width = 8, height = 6)
+  
+ggsave("FiltroHP.png", dpi = 600, width = 9, height = 6)
 
 df.prep <- df %>% 
   group_by(rua) %>% 
