@@ -1,5 +1,9 @@
 library(tidyverse)
 
+
+library(devtools)
+install_github("bcastanho/SCtools")
+
 #Não fatais ----
 
 df.original <- data.table::fread("dados/acidentes_naofatais.csv", encoding = "Latin-1")
@@ -105,45 +109,57 @@ data.frame(sintetico = dataprep_out$Y0plot %*% synth_out$solution.w,
   as_tibble() %>% 
   select(data, bandeirantes = X28, sintetico = w.weight) %>% 
   mutate(across(c(bandeirantes, sintetico), ~ .^2),
-         fill = sintetico > bandeirantes,
-         ymax = ifelse(fill == TRUE, sintetico, bandeirantes),
-         ymin = ifelse(fill == FALSE, sintetico, bandeirantes)) %>% 
+         fill = data > 2022 + 8/12,
+         ymax = ifelse(fill == TRUE, bandeirantes, NA),
+         ymin = ifelse(fill == TRUE, sintetico, NA)) %>% 
   ggplot(aes(x = data)) +
-  annotate("rect", xmin = 2022 + 8/12, xmax = 2023 + 9/12, ymin = 0, ymax = Inf, fill = "grey", alpha =.25) +
-  geom_line(aes(y = sintetico), linetype = "dashed") +
-  geom_line(aes(y = bandeirantes)) +
+  annotate("rect", xmin = 2022 + 8/12, xmax = 2023 + 9/12, ymin = 0, ymax = Inf, fill = "black", alpha =.05) +
+  geom_line(aes(y = sintetico, linetype = "Sintético")) +
+  geom_line(aes(y = bandeirantes, linetype = "Bandeirantes")) +
+  geom_ribbon(aes(ymin = ymin, ymax = ymax), fill = "blue", alpha = .2) +
+  annotate("segment", x = 2022, y = 4.5, xend = 2022.6, yend = 4.5,
+           arrow = arrow(length = unit(0.01, "npc"))) +
+  annotate('text', x = 2021.6, y = 4.5,label = 'Faixa Azul', size = 3.5) +
   geom_vline(xintercept = 2022 + 8/12, alpha = 1, linetype = "dotted") +
+  scale_linetype_manual(values = c("Sintético" = "dashed", "Bandeirantes" = "solid")) + 
   scale_y_continuous(limits = c(3,25), trans = "log10") +
-  labs(x = "Data", y = "Número de sinistros por mês", title = "Comparação Bandeirantes vs Controle Sintético") +
-  theme_classic()
+  labs(x = "Data", y = "Número de sinistros por mês", linetype = "") +
+  theme_classic() +
+  theme(legend.position = c(0.25,0.75))
 
-ggsave("output/sintetico.png", dpi = 600, width = 9, height = 6)
-
-
-y0plot1 <- dataprep.res$Y0plot %*% synth.res$solution.w                
-
-plot(
-  dataprep.res$tag$time.plot
-  ,dataprep.res$Y1plot,
-  t="l",
-  col="black",
-  lwd=2,
-  main=Main,
-  ylab=Ylab,
-  xlab=Xlab,xaxs="i",yaxs="i",ylim=Ylim)
-
-lines(
-  dataprep.res$tag$time.plot,
-  y0plot1 ,
-  col="black",
-  lty="dashed",
-  lwd=2,
-  cex=4/5
-      )
-      
+ggsave("output/sintetico.png", dpi = 600, width = 5, height = 3.5)
 
 
-abline(v=2022+8/12, col="blue")
+## plot de comparação da Bandeirantes real e sintética na diferença
+data.frame(sintetico = dataprep_out$Y0plot %*% synth_out$solution.w,
+           data = dataprep_out$tag$time.plot,
+           band = dataprep_out$Y1plot) %>% 
+  as_tibble() %>% 
+  select(data, bandeirantes = X28, sintetico = w.weight) %>% 
+  mutate(across(c(bandeirantes, sintetico), ~ .^2),
+         fill = data > 2022 + 8/12,
+         ymax = ifelse(fill == TRUE, 0, NA),
+         ymin = ifelse(fill == TRUE, bandeirantes - sintetico, NA),
+         cor = ifelse(ymax > ymin, 0, 1)) %>% 
+  ggplot(aes(x = data)) +
+  annotate("rect", xmin = 2022 + 8/12, xmax = 2023 + 9/12, ymin = -Inf, ymax = Inf, fill = "black", alpha =.05) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_line(aes(y = bandeirantes - sintetico)) +
+  geom_ribbon(aes(ymin = ymin, ymax = ymax, fill = factor(cor)), alpha = .2) +
+  annotate("segment", x = 2022, y = -2, xend = 2022.6, yend = -2,
+           arrow = arrow(length = unit(0.01, "npc"))) +
+  annotate('text', x = 2021.6, y = -2,label = 'Faixa Azul', size = 3.5) +
+  geom_vline(xintercept = 2022 + 8/12, alpha = 1, linetype = "dotted") +
+  labs(x = "Data", y = "Número de sinistros por mês", linetype = "") +
+  scale_fill_manual(values = c("0" = "blue", "1" = "red")) +
+  theme_classic() +
+  theme(legend.position = c(0.25,0.75)) +
+  ylim(c(-5,5)) +
+  guides(color=guide_legend("facotor(cor)"), fill = "none") 
+
+ggsave("output/sintetico_dif.png", dpi = 600, width = 5, height = 3.5)
+
+
 ### Tabela com os coeficientes de cada componente do controle sintetico
 resultado <- data.frame(list(rua = dataprep_out[["names.and.numbers"]][["unit.names"]][2:113],
                              peso = synth_out[["solution.w"]] %>% round(4))) %>% 
@@ -160,24 +176,55 @@ dataprep_out.placebo <- Synth::dataprep(
   special.predictors = list(list("resposta", seq(2019 + 1/12, 2020 + 1/12, by = 1/12) %>% round(3), "mean"),
                             list("resposta", seq(2020 + 1/12, 2021 + 1/12, by = 1/12) %>% round(3), "mean"),
                             list("resposta", seq(2020 + 1/12, 2021 + 1/12, by = 1/12) %>% round(3), "mean"),
-                            list("resposta", seq(2021 + 1/12, 2021 + 6/12, by = 1/12) %>% round(3), "mean")),
-  time.predictors.prior = seq(2019 + 2/12, 2022 + 8/12, by = 1/12) %>% round(3),
+                            list("resposta", seq(2021 + 1/12, 2021 + 1/12, by = 1/12) %>% round(3), "mean")),
+  time.predictors.prior = seq(2019 + 1/12, 2022 + 2/12, by = 1/12) %>% round(3),
   predictors.op = "mean",
   dependent = "resposta",
   unit.variable = "id",
   unit.names.variable = "rua",
   time.variable = "ano",
-  treatment.identifier = 26,
-  controls.identifier = c(1:25, 27:111),
-  time.optimize.ssr = seq(2019 + 2/12, 2021 + 6/12, by = 1/12) %>% round(3),
+  treatment.identifier = 28,
+  controls.identifier = c(1:27, 29:111),
+  time.optimize.ssr = seq(2019 + 2/12, 2021 + 2/12, by = 1/12) %>% round(3),
   time.plot = seq(2019 + 2/12, 2023 + 9/12, by = 1/12) %>% round(3)
 )
 
 synth_out.placebo <- Synth::synth(data.prep.obj = dataprep_out.placebo)
 
-Synth::path.plot(synth_out.placebo, dataprep_out.placebo)
-abline(v=2021+6/12, col="blue")
-abline(v=2022+8/12, col="blue")
+data.frame(sintetico = dataprep_out.placebo$Y0plot %*% synth_out.placebo$solution.w,
+           data = dataprep_out.placebo$tag$time.plot,
+           band = dataprep_out.placebo$Y1plot) %>% 
+  as_tibble() %>% 
+  select(data, bandeirantes = X28, sintetico = w.weight) %>% 
+  mutate(across(c(bandeirantes, sintetico), ~ .^2),
+         fill = data > 2022 + 2/12,
+         ymax = ifelse(fill == TRUE, bandeirantes, NA),
+         ymin = ifelse(fill == TRUE, sintetico, NA),
+         cor = ifelse(ymax > ymin, 1, 0)) %>% 
+  ggplot(aes(x = data)) +
+  annotate("rect", xmin = 2022 + 8/12, xmax = 2023 + 9/12, ymin = 0, ymax = Inf, fill = "black", alpha =.05) +
+  annotate("rect", xmin = 2022 + 2/12, xmax = 2022 + 8/12, ymin = 0, ymax = Inf, fill = "orange", alpha =.05) +
+  geom_line(aes(y = sintetico, linetype = "Sintético")) +
+  geom_line(aes(y = bandeirantes, linetype = "Bandeirantes")) +
+  geom_vline(xintercept = 2022 + 8/12, alpha = 1, linetype = "dotted") +
+  geom_vline(xintercept = 2022 + 2/12, alpha = 1, linetype = "dotted") +
+  geom_ribbon(aes(ymin = ymin, ymax = ymax, fill = factor(cor)), alpha = .2) +
+  annotate("segment", x = 2022, y = 3.5, xend = 2022.6, yend = 3.5,
+           arrow = arrow(length = unit(0.01, "npc"))) +
+  annotate('text', x = 2021.6, y = 3.5,label = 'Faixa Azul', size = 3.5) +
+  annotate("segment", x = 2021.6, y = 4.5, xend = 2022, yend = 4.5,
+           arrow = arrow(length = unit(0.01, "npc"))) +
+  annotate('text', x = 2021.2, y = 4.5,label = 'Placebo', size = 3.5) +
+  scale_linetype_manual(values = c("Sintético" = "dashed", "Bandeirantes" = "solid")) + 
+  scale_y_continuous(limits = c(3,25), trans = "log10") +
+  labs(x = "Data", y = "Número de sinistros por mês", linetype = "") +
+  scale_fill_manual(values = c("0" = "blue", "1" = "red")) +
+  theme_classic() +
+  theme(legend.position = c(0.25,0.75)) +
+  guides(color=guide_legend("facotor(cor)"), fill = "none") 
+
+ggsave("output/placebo.png", dpi = 600, width = 5, height = 3.5)
+
 
 resultado.placebo <- data.frame(list(rua = dataprep_out.placebo[["names.and.numbers"]][["unit.names"]][2:111],
                                      peso = synth_out.placebo[["solution.w"]] %>% round(4))) %>% 
@@ -188,8 +235,9 @@ tdf <- SCtools::generate.placebos(dataprep_out, synth_out, Sigf.ipop = 2, strate
 
 # plot_placebos(placebos, discard.extreme = TRUE, mspe.limit = 4) +
 #   geom_vline(xintercept = 2022 + 8/12)
+c(tdf$mspe.placs/tdf$loss.v[1])[26]
 
-mspe.limit <- 4
+mspe.limit <- 36*1.5
 n<-tdf$n
 tr<-tdf$tr
 names.and.numbers<-tdf$names.and.numbers
@@ -208,6 +256,7 @@ df.plot <- df.plot %>%
               select(id = id, mspe = unlist.mspe.placs.)) %>% 
   filter(mspe < mspe.limit)
 
+df.plot %>% distinct(id) %>% summarize(n = n())
 # bandeirantes_pre_tratamento <- data.frame(tdf$df) %>% 
 #   mutate(x = year, y=(Y1-synthetic.Y1)) %>% 
 #   filter(year < (2022 + 9/12) %>% round(3)) %>% 
@@ -236,26 +285,42 @@ df.plot <- df.plot %>%
 #         axis.text.y = element_text(colour = 'black'),
 #         legend.position='bottom')
 
+# df.plot %>% 
+#   as_tibble() %>% 
+#   ggplot(aes(x=year, y=(tr-cont)))+
+#   geom_line(aes(group=id, color = mspe), alpha = 0.75)+
+#   geom_vline(xintercept = 2022 + 9/12, linetype = "dotted") +
+#   geom_hline(yintercept = 0, linetype = 'dashed')+ 
+#   geom_line(data=data.frame(tdf$df), aes(x = year, y=(Y1-synthetic.Y1)), 
+#             lwd = 1.25) + 
+#   ylim(c(-1.25,1.25)) +
+#   scale_color_gradient(low = "black", high = "white", limits = c(0,mspe.limit)) +
+#   labs(y=NULL, x=NULL, title=NULL)+
+#   theme(panel.background = element_blank(), 
+#         panel.grid.major = element_blank(),
+#         panel.grid.minor=element_blank(),
+#         axis.line.x = element_line(colour = 'black'),
+#         axis.line.y = element_line(colour = 'black'),
+#         legend.key = element_blank(),
+#         axis.text.x = element_text(colour = 'black'),
+#         axis.text.y = element_text(colour = 'black'),
+#         legend.position='bottom')
+
 df.plot %>% 
   as_tibble() %>% 
   ggplot(aes(x=year, y=(tr-cont)))+
-  geom_line(aes(group=id, color = mspe), alpha = 0.75)+
+  geom_line(aes(group=id), lwd = 1.25, color = "#d3d3d3")+
   geom_vline(xintercept = 2022 + 9/12, linetype = "dotted") +
   geom_hline(yintercept = 0, linetype = 'dashed')+ 
   geom_line(data=data.frame(tdf$df), aes(x = year, y=(Y1-synthetic.Y1)), 
             lwd = 1.25) + 
   ylim(c(-1.25,1.25)) +
-  scale_color_gradient(low = "black", high = "white", limits = c(0,mspe.limit)) +
-  labs(y=NULL, x=NULL, title=NULL)+
-  theme(panel.background = element_blank(), 
-        panel.grid.major = element_blank(),
-        panel.grid.minor=element_blank(),
-        axis.line.x = element_line(colour = 'black'),
-        axis.line.y = element_line(colour = 'black'),
-        legend.key = element_blank(),
-        axis.text.x = element_text(colour = 'black'),
-        axis.text.y = element_text(colour = 'black'),
-        legend.position='bottom')
+  labs(y=NULL, x=NULL, title=NULL) +
+  theme_classic()
+
+SCtools::plot_placebos(tdf)
+SCtools::mspe.plot(tdf, discard.extreme = TRUE, mspe.limit = 10, plot.hist = TRUE)
+
 
 
 
