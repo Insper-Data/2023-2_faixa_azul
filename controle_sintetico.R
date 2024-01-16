@@ -21,53 +21,35 @@ df.preprocessado <- df.original %>%
   group_by(ano, mes, rua) %>% 
   summarize(acidentes = sum(motocicleta))
 
-
-## plot para visualizar a distribuição da quantidade de sinistros em cada rua
-df.preprocessado %>%
-  group_by(rua) %>%
-  summarize(acidentes = sum(acidentes)) %>%
-  ggplot() +
-  geom_density(aes(acidentes)) +
-  scale_x_continuous(trans = "sqrt")
-
-## plot para apresentar um histograma da quantidade de sinistros em cada mês em busca de analisar possível 
-## sazonalidade do fenômeno
-df.preprocessado %>%
-  filter(ano != 2023) %>%
-  group_by(mes) %>%
-  summarize(acidentes = sum(acidentes)) %>%
-  ggplot(aes(y = factor(mes), x = acidentes)) +
-  geom_col()
-
 ## Aqui é criado o dataframe que será empregado nas análises
 ## Primeiramente é criado um dataframe com cada ano e mês de interesse (entre 2019 e a data mais atual)
 ## com cada uma das ruas que apresentaram mais de 100 sinistros ao longo desse periodo
 df <- data.frame(ano = c(2019:2023),
-               mes = rep(c(1:12), each = 5),
-               rua = rep(df.preprocessado %>% 
-                           group_by(rua) %>%
-                           summarize(acidentes = sum(acidentes)) %>% 
-                           filter(acidentes > 100) %>% 
-                           distinct(rua) %>% 
-                           pull(rua), 
-                         each = 5*12)) %>%
-as_tibble() %>%
-## aqui é realizada a inserção dos dados do infosiga preprocessados anteriormente
-left_join(df.preprocessado) %>%
-arrange(rua, desc(ano), desc(mes)) %>%
-filter(((ano == 2023 & mes <= 9) | ano != 2023)) %>% ## seleciona até o dado mais atual
-## o mutate abaixo serve para substituir o dado faltante de 03/2023 em que não foram registrados
-## ocorrências na base (ainda que tenham ocorrido sinistros no período)
-## para tanto, foi realizada a substituição pela média dos três meses anteriores
-mutate(acidentes = replace_na(acidentes, 0),
-       acidentes_mm = zoo::rollapply(acidentes, 3, mean, align = "left", fill = NA),
-       acidentes = ifelse(ano == 2023 & mes == 3, lead(acidentes_mm), acidentes)) %>%
-select(-acidentes_mm) %>%
-## por fim os dados são agrupados para cada rua e é aplicado o filtro HP com freq apropriada para dados mensais
-## e recuperamos o valor de tendencia (uma das componentes retornadas pela função)
-group_by(rua) %>%
-mutate(acidentes_hp = mFilter::hpfilter(sqrt(acidentes), freq = 144)$trend[,1]) %>%
-ungroup()
+                 mes = rep(c(1:12), each = 5),
+                 rua = rep(df.preprocessado %>% 
+                             group_by(rua) %>%
+                             summarize(acidentes = sum(acidentes)) %>% 
+                             filter(acidentes > 100) %>% 
+                             distinct(rua) %>% 
+                             pull(rua), 
+                           each = 5*12)) %>%
+  as_tibble() %>%
+  ## aqui é realizada a inserção dos dados do infosiga preprocessados anteriormente
+  left_join(df.preprocessado) %>%
+  arrange(rua, desc(ano), desc(mes)) %>%
+  filter(((ano == 2023 & mes <= 9) | ano != 2023)) %>% ## seleciona até o dado mais atual
+  ## o mutate abaixo serve para substituir o dado faltante de 03/2023 em que não foram registrados
+  ## ocorrências na base (ainda que tenham ocorrido sinistros no período)
+  ## para tanto, foi realizada a substituição pela média dos três meses anteriores
+  mutate(acidentes = replace_na(acidentes, 0),
+         acidentes_mm = zoo::rollapply(acidentes, 3, mean, align = "left", fill = NA),
+         acidentes = ifelse(ano == 2023 & mes == 3, lead(acidentes_mm), acidentes)) %>%
+  select(-acidentes_mm) %>%
+  ## por fim os dados são agrupados para cada rua e é aplicado o filtro HP com freq apropriada para dados mensais
+  ## e recuperamos o valor de tendencia (uma das componentes retornadas pela função)
+  group_by(rua) %>%
+  mutate(acidentes_hp = mFilter::hpfilter(sqrt(acidentes), freq = 144)$trend[,1]) %>%
+  ungroup()
 
 ## plot de comparação dos dados da Av. dos Bandeirantes com e sem a aplicação do filtro HP
 df %>% 
@@ -77,10 +59,11 @@ df %>%
   geom_line(aes(y = acidentes, linetype = "Sinistros")) + 
   geom_line(aes(y = acidentes_hp ^ 2, linetype = "Sinistros (filtro HP)")) + 
   scale_linetype_manual(values = c("Sinistros" = "solid", "Sinistros (filtro HP)" = "dashed")) + 
-  labs(x = "Data", y="Quantidade de sinistros", linetype = "")
+  labs(x = "Data", y="Quantidade de sinistros", linetype = "") +
+  theme_classic()
   
   
-ggsave("FiltroHP.png", dpi = 600, width = 9, height = 6)
+ggsave("output/FiltroHP.png", dpi = 600, width = 9, height = 4)
 
 df.prep <- df %>% 
   group_by(rua) %>% 
@@ -115,9 +98,6 @@ dataprep_out <- Synth::dataprep(
 
 synth_out <- Synth::synth(data.prep.obj = dataprep_out)
 
-## plot simples para controle sintético (fornecido pela biblioteca)
-Synth::path.plot(synth_out, dataprep_out)
-
 ## plot de comparação da Bandeirantes real e sintética
 data.frame(sintetico = dataprep_out$Y0plot %*% synth_out$solution.w,
            data = dataprep_out$tag$time.plot,
@@ -129,15 +109,16 @@ data.frame(sintetico = dataprep_out$Y0plot %*% synth_out$solution.w,
          ymax = ifelse(fill == TRUE, sintetico, bandeirantes),
          ymin = ifelse(fill == FALSE, sintetico, bandeirantes)) %>% 
   ggplot(aes(x = data)) +
-  annotate("rect", xmin = 2022 + 8/12, xmax = 2023 + 9/12, ymin = 5, ymax = 15, fill = "grey", alpha =.25) +
+  annotate("rect", xmin = 2022 + 8/12, xmax = 2023 + 9/12, ymin = 0, ymax = Inf, fill = "grey", alpha =.25) +
   geom_line(aes(y = sintetico), linetype = "dashed") +
   geom_line(aes(y = bandeirantes)) +
-  geom_vline(xintercept = 2022 + 8/12, alpha = .25, linetype = "dotted") +
-  scale_y_continuous(limits = c(5,15), trans = "sqrt") +
-  labs(x = "Tempo", y = "Número de acidentes por mês", title = "Comparação Bandeirantes vs Controle Sintético") +
-  theme_bw()
-  
-  # geom_ribbon(aes(ymin = ymin, ymax = ymax, fill = fill))
+  geom_vline(xintercept = 2022 + 8/12, alpha = 1, linetype = "dotted") +
+  scale_y_continuous(limits = c(3,25), trans = "log10") +
+  labs(x = "Data", y = "Número de sinistros por mês", title = "Comparação Bandeirantes vs Controle Sintético") +
+  theme_classic()
+
+ggsave("output/sintetico.png", dpi = 600, width = 9, height = 6)
+
 
 y0plot1 <- dataprep.res$Y0plot %*% synth.res$solution.w                
 
