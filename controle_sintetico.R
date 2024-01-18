@@ -78,6 +78,9 @@ df.prep <- df %>%
          ano = round(ano + mes, 3)) %>% 
   as.data.frame()
 
+id.tratamento <- df.prep %>% filter(rua == "AVENIDA DOS BANDEIRANTES") %>% pull(id) %>% .[1]
+n.avenidas <- df.prep %>% distinct(id) %>% count() %>% as.numeric()
+
 #Controle sintético BANDEIRANTES ----
 dataprep_out <- Synth::dataprep(
   foo = df.prep %>% 
@@ -94,8 +97,8 @@ dataprep_out <- Synth::dataprep(
   unit.variable = "id",
   unit.names.variable = "rua",
   time.variable = "ano",
-  treatment.identifier = 28,
-  controls.identifier = c(1:118)[-28],
+  treatment.identifier = id.tratamento,
+  controls.identifier = c(1:n.avenidas)[-id.tratamento],
   time.optimize.ssr = seq(2019 + 1/12, 2022 + 10/12, by = 1/12) %>% round(3),
   time.plot = seq(2019 + 1/12, 2023 + 9/12, by = 1/12) %>% round(3)
 )
@@ -107,7 +110,7 @@ data.frame(sintetico = dataprep_out$Y0plot %*% synth_out$solution.w,
            data = dataprep_out$tag$time.plot,
            band = dataprep_out$Y1plot) %>% 
   as_tibble() %>% 
-  select(data, bandeirantes = X28, sintetico = w.weight) %>% 
+  select(data, bandeirantes = paste("X", id.tratamento, sep = ""), sintetico = w.weight) %>% 
   mutate(across(c(bandeirantes, sintetico), ~ .^2),
          fill = data > 2022 + 10/12,
          ymax = ifelse(fill == TRUE, bandeirantes, NA),
@@ -135,7 +138,7 @@ data.frame(sintetico = dataprep_out$Y0plot %*% synth_out$solution.w,
            data = dataprep_out$tag$time.plot,
            band = dataprep_out$Y1plot) %>% 
   as_tibble() %>% 
-  select(data, bandeirantes = X28, sintetico = w.weight) %>% 
+  select(data, bandeirantes = paste("X", id.tratamento, sep = ""), sintetico = w.weight) %>% 
   mutate(across(c(bandeirantes, sintetico), ~ .^2),
          fill = data > 2022 + 10/12,
          ymax = ifelse(fill == TRUE, 0, NA),
@@ -159,9 +162,21 @@ data.frame(sintetico = dataprep_out$Y0plot %*% synth_out$solution.w,
 
 ggsave("output/sintetico_dif.png", dpi = 600, width = 5, height = 3.5)
 
+#Número de sinistros pós tratamento
+data.frame(sintetico = dataprep_out$Y0plot %*% synth_out$solution.w,
+           data = dataprep_out$tag$time.plot,
+           band = dataprep_out$Y1plot) %>% 
+  as_tibble() %>% 
+  select(data, bandeirantes = paste("X", id.tratamento, sep = ""), sintetico = w.weight) %>% 
+  mutate(across(c(bandeirantes, sintetico), ~ .^2)) %>% 
+  filter(data > 2022 + 10/12) %>% 
+  summarize(sinistros_bandeirantes = sum(bandeirantes),
+            sinistros_sintetico = sum(sintetico)) %>% 
+  mutate(diff = sinistros_bandeirantes - sinistros_sintetico,
+         variacao = diff / sinistros_bandeirantes)
 
 ### Tabela com os coeficientes de cada componente do controle sintetico
-data.frame(list(rua = dataprep_out[["names.and.numbers"]][["unit.names"]][2:118],
+data.frame(list(rua = dataprep_out[["names.and.numbers"]][["unit.names"]][2:n.avenidas],
                 peso = synth_out[["solution.w"]] %>% round(4))) %>% 
   arrange(desc(w.weight))
 
@@ -181,8 +196,8 @@ dataprep_out.placebo <- Synth::dataprep(
   unit.variable = "id",
   unit.names.variable = "rua",
   time.variable = "ano",
-  treatment.identifier = 28,
-  controls.identifier = c(1:118)[-28],
+  treatment.identifier = id.tratamento,
+  controls.identifier = c(1:n.avenidas)[-id.tratamento],
   time.optimize.ssr = seq(2019 + 1/12, 2022 + 2/12, by = 1/12) %>% round(3),
   time.plot = seq(2019 + 1/12, 2023 + 9/12, by = 1/12) %>% round(3)
 )
@@ -193,7 +208,7 @@ data.frame(sintetico = dataprep_out.placebo$Y0plot %*% synth_out.placebo$solutio
            data = dataprep_out.placebo$tag$time.plot,
            band = dataprep_out.placebo$Y1plot) %>% 
   as_tibble() %>% 
-  select(data, bandeirantes = X28, sintetico = w.weight) %>% 
+  select(data, bandeirantes = paste("X", id.tratamento, sep = ""), sintetico = w.weight) %>% 
   mutate(across(c(bandeirantes, sintetico), ~ .^2),
          fill = data > 2022 + 2/12,
          ymax = ifelse(fill == TRUE, bandeirantes, NA),
@@ -226,12 +241,13 @@ data.frame(sintetico = dataprep_out.placebo$Y0plot %*% synth_out.placebo$solutio
 ggsave("output/placebo.png", dpi = 600, width = 5, height = 3.5)
 
 
-data.frame(list(rua = dataprep_out.placebo[["names.and.numbers"]][["unit.names"]][2:118],
-                                     peso = synth_out.placebo[["solution.w"]] %>% round(4))) %>% 
+data.frame(list(rua = dataprep_out.placebo[["names.and.numbers"]][["unit.names"]][2:n.avenidas],
+                                     peso = synth_out.placebo[["solution.w"]] %>% round(2))) %>% 
   arrange(desc(w.weight))
 
+
 #Teste placebo "vassoura" ----
-tdf <- SCtools::generate.placebos(dataprep_out, synth_out, Sigf.ipop = 4, strategy = "multisession")
+tdf <- SCtools::generate.placebos(dataprep_out, synth_out, Sigf.ipop = 2, strategy = "multisession")
 tdf$t1 <- 2022 + 10/12
 
 create.df <- function(tdf, mspe.limit){
