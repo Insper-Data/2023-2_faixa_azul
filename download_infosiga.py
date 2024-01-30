@@ -15,17 +15,17 @@ def download_infosiga():
 
     for nome_arquivo, url in dados.items():
         path_dados = DATA_DIR / nome_arquivo
-        if not path_dados.exists():
-            print(f'Fazendo download de {nome_arquivo}')
-            headers = {
-            'User-Agent': \
-                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) ' \
-                'AppleWebKit/537.36 (KHTML, like Gecko) ' \
-                'Chrome/39.0.2171.95 Safari/537.36',
-            }
-            response = requests.get(url, headers=headers)
-            csv_content = response.content.decode(encoding='latin-1')
-            with open(path_dados, 'w', encoding='latin-1') as file:
-                file.write(csv_content)
+        
+        print(f'Fazendo download de {nome_arquivo}')
+        headers = {
+        'User-Agent': \
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) ' \
+            'AppleWebKit/537.36 (KHTML, like Gecko) ' \
+            'Chrome/39.0.2171.95 Safari/537.36',
+        }
+        response = requests.get(url, headers=headers)
+        csv_content = response.content.decode(encoding='latin-1')
+        with open(path_dados, 'w', encoding='latin-1') as file:
+            file.write(csv_content)
 
 download_infosiga()

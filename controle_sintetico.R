@@ -41,7 +41,6 @@ df <- data.frame(ano = c(2019:2023),
   ## aqui é realizada a inserção dos dados do infosiga preprocessados anteriormente
   left_join(df.preprocessado) %>%
   arrange(rua, desc(ano), desc(mes)) %>%
-  filter(((ano == 2023 & mes <= 9) | ano != 2023)) %>% ## seleciona até o dado mais atual
   ## o mutate abaixo serve para substituir o dado faltante de 03/2023 em que não foram registrados
   ## ocorrências na base (ainda que tenham ocorrido sinistros no período)
   ## para tanto, foi realizada a substituição pela média dos três meses anteriores
@@ -100,7 +99,7 @@ dataprep_out <- Synth::dataprep(
   treatment.identifier = id.tratamento,
   controls.identifier = c(1:n.avenidas)[-id.tratamento],
   time.optimize.ssr = seq(2019 + 1/12, 2022 + 10/12, by = 1/12) %>% round(3),
-  time.plot = seq(2019 + 1/12, 2023 + 9/12, by = 1/12) %>% round(3)
+  time.plot = seq(2019 + 1/12, 2023 + 12/12, by = 1/12) %>% round(3)
 )
 
 synth_out <- Synth::synth(data.prep.obj = dataprep_out)
@@ -131,6 +130,7 @@ data.frame(sintetico = dataprep_out$Y0plot %*% synth_out$solution.w,
   theme(legend.position = c(0.25,0.75))
 
 ggsave("output/sintetico.png", dpi = 600, width = 5, height = 3.5)
+ggsave("output/sintetico_wide.png", dpi = 600, width = 8, height = 4)
 
 
 ## plot de comparação da Bandeirantes real e sintética na diferença
@@ -145,7 +145,7 @@ data.frame(sintetico = dataprep_out$Y0plot %*% synth_out$solution.w,
          ymin = ifelse(fill == TRUE, bandeirantes - sintetico, NA),
          cor = ifelse(ymax > ymin, 0, 1)) %>% 
   ggplot(aes(x = data)) +
-  annotate("rect", xmin = 2022 + 10/12, xmax = 2023 + 9/12, ymin = -Inf, ymax = Inf, fill = "black", alpha =.05) +
+  annotate("rect", xmin = 2022 + 10/12, xmax = 2023 + 11/12, ymin = -Inf, ymax = Inf, fill = "black", alpha =.05) +
   geom_hline(yintercept = 0, linetype = "dashed") +
   geom_line(aes(y = bandeirantes - sintetico)) +
   geom_ribbon(aes(ymin = ymin, ymax = ymax, fill = factor(cor)), alpha = .2) +
@@ -161,6 +161,7 @@ data.frame(sintetico = dataprep_out$Y0plot %*% synth_out$solution.w,
   guides(color=guide_legend("facotor(cor)"), fill = "none") 
 
 ggsave("output/sintetico_dif.png", dpi = 600, width = 5, height = 3.5)
+ggsave("output/sintetico_dif_wide.png", dpi = 600, width = 8, height = 4)
 
 #Número de sinistros pós tratamento
 data.frame(sintetico = dataprep_out$Y0plot %*% synth_out$solution.w,
@@ -199,7 +200,7 @@ dataprep_out.placebo <- Synth::dataprep(
   treatment.identifier = id.tratamento,
   controls.identifier = c(1:n.avenidas)[-id.tratamento],
   time.optimize.ssr = seq(2019 + 1/12, 2022 + 2/12, by = 1/12) %>% round(3),
-  time.plot = seq(2019 + 1/12, 2023 + 9/12, by = 1/12) %>% round(3)
+  time.plot = seq(2019 + 1/12, 2023 + 12/12, by = 1/12) %>% round(3)
 )
 
 synth_out.placebo <- Synth::synth(data.prep.obj = dataprep_out.placebo)
@@ -215,7 +216,7 @@ data.frame(sintetico = dataprep_out.placebo$Y0plot %*% synth_out.placebo$solutio
          ymin = ifelse(fill == TRUE, sintetico, NA),
          cor = ifelse(ymax > ymin, 1, 0)) %>% 
   ggplot(aes(x = data)) +
-  annotate("rect", xmin = 2022 + 10/12, xmax = 2023 + 9/12, ymin = 0, ymax = Inf, fill = "black", alpha =.05) +
+  annotate("rect", xmin = 2022 + 10/12, xmax = 2023 + 12/12, ymin = 0, ymax = Inf, fill = "black", alpha =.05) +
   annotate("rect", xmin = 2022 + 2/12, xmax = 2022 + 10/12, ymin = 0, ymax = Inf, fill = "orange", alpha =.05) +
   geom_line(aes(y = sintetico, linetype = "Sintético")) +
   geom_line(aes(y = bandeirantes, linetype = "Bandeirantes")) +
@@ -239,6 +240,7 @@ data.frame(sintetico = dataprep_out.placebo$Y0plot %*% synth_out.placebo$solutio
 
 
 ggsave("output/placebo.png", dpi = 600, width = 5, height = 3.5)
+ggsave("output/placebo_wide.png", dpi = 600, width = 8, height = 4)
 
 
 data.frame(list(rua = dataprep_out.placebo[["names.and.numbers"]][["unit.names"]][2:n.avenidas],
@@ -247,7 +249,7 @@ data.frame(list(rua = dataprep_out.placebo[["names.and.numbers"]][["unit.names"]
 
 
 #Teste placebo "vassoura" ----
-tdf <- SCtools::generate.placebos(dataprep_out, synth_out, Sigf.ipop = 2, strategy = "multisession")
+tdf <- SCtools::generate.placebos(dataprep_out, synth_out, Sigf.ipop = 1, strategy = "multisession")
 tdf$t1 <- 2022 + 10/12
 
 create.df <- function(tdf, mspe.limit){
@@ -267,7 +269,7 @@ create.df <- function(tdf, mspe.limit){
   return(df.plot)
 }
 
-create.df(tdf, mspe.limit = 10) %>% 
+create.df(tdf, mspe.limit = 20) %>% 
   as_tibble() %>% 
   ggplot(aes(x=year, y=(tr^2-cont^2)))+
   geom_line(aes(group=id, color = "Controle"), lwd = 0.75)+
@@ -280,11 +282,26 @@ create.df(tdf, mspe.limit = 10) %>%
   labs(y="Número mensal de sinistros", x="Data", title = "", color = "") +
   theme_classic()
 
+
 ggsave("output/vassoura.png", dpi = 600, width = 9, height = 4)
 
 SCtools::mspe.test(tdf)$p.val * 100
 SCtools::mspe.test(tdf, discard.extreme = TRUE, mspe.limit = 20)$p.val * 100
 SCtools::mspe.test(tdf, discard.extreme = TRUE, mspe.limit = 10)$p.val * 100
+SCtools::mspe.test(tdf, discard.extreme = TRUE, mspe.limit = 3)$p.val * 100
+
+p.values <- c()
+for (mspe.limit in 1:40){
+  p.values <- append(p.values, c(SCtools::mspe.test(tdf, discard.extreme = TRUE, mspe.limit = mspe.limit)$p.val * 100))
+}
+
+create.df(tdf, mspe.limit = 10) %>% 
+  as_tibble()
+
+SCtools::mspe.test(tdf)$test %>% 
+  as_tibble() %>% 
+  select(avenida = "unit", ratio = "MSPE.ratios") %>% 
+  arrange(desc(ratio))
 
 gg <- SCtools::mspe.test(tdf, discard.extreme = TRUE, mspe.limit = 20)$test %>% 
   as_tibble() %>% 
@@ -308,4 +325,18 @@ tibble(x = g$data[[1]]$x, y = g$data[[1]]$y) %>%
            arrow = arrow(length = unit(0.01, "npc"))) +
   annotate('text', x = 1, y = 0.1,label = 'Bandeirantes', size = 3.5) +
   theme_classic()
+
+
+SCtools::mspe.test(tdf, discard.extreme = TRUE, mspe.limit = 20)$test %>% 
+  as_tibble() %>% 
+  select(avenida = "unit", ratio = "MSPE.ratios") %>% 
+  arrange(desc(ratio)) %>% 
+  mutate(cor = ifelse(avenida != "AVENIDA DOS BANDEIRANTES", "Outras", "Bandeirantes")) %>% 
+  ggplot() +
+  geom_histogram(aes(x = ratio, fill = cor), binwidth = 7.5) +
+  theme_classic() +
+  labs(x = "Razão MSPE Pós/Pré", y = "Frequência", fill = "Avenida") +
+  coord_flip() +
+  theme(legend.position = c(0.85, 0.85))
+ggsave("output/histograma_ratio.png", dpi = 600, width = 4, height = 5)
 

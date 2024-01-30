@@ -41,9 +41,10 @@ df %>%
   ggplot(aes(x = clock::year_month_day(ano, mes, 1) %>% as.Date(), y = value, fill = name)) +
   geom_area(color = "black", lwd = .3) +
   scale_fill_viridis_d(direction = 1) +
-  theme_bw() +
+  theme_classic() +
   labs(title = "Sinistros por mês no município de São Paulo",
-       x = "Data", y = "Número de Sinistros", fill = "Meio de transporte")
+       x = "Data", y = "Número de Sinistros", fill = "Meio de transporte") + 
+  scale_x_date(labels= scales::date_format("%b/%Y"), date_breaks = "6 month")
 
 ggsave("output/sinistros_sp.png", width = 9, height = 4, dpi = 600)
 
@@ -62,26 +63,45 @@ ggsave("output/sinistros_sp.png", width = 9, height = 4, dpi = 600)
 #   summarize(acidentes_moto = sum(acidentes_moto),
 #             n = n())
 
-df %>% 
-  filter(lubridate::year(data) == 2023,
-         rua != "NAO DISPONIVEL") %>%
+df.qqplot <- df %>% 
+  filter(rua != "NAO DISPONIVEL") %>%
   group_by(rua) %>% 
-  summarize(acidentes_moto = sum(motocicleta)) %>% 
+  summarize(acidentes_moto = n()) %>% 
   arrange(desc(acidentes_moto)) %>% 
   mutate(ranking = row_number() / length(acidentes_moto),
-         soma = cumsum(acidentes_moto)/sum(acidentes_moto)) %>%
+         soma = cumsum(acidentes_moto)/sum(acidentes_moto),
+         cat = "Qualquer tipo") %>%
+  bind_rows(df %>% 
+              filter(rua != "NAO DISPONIVEL") %>%
+              group_by(rua) %>% 
+              summarize(acidentes_moto = sum(motocicleta)) %>% 
+              arrange(desc(acidentes_moto)) %>% 
+              mutate(ranking = row_number() / length(acidentes_moto),
+                     soma = cumsum(acidentes_moto)/sum(acidentes_moto),
+                     cat = "Envolveu Motocicleta"))
+
+df.qqplot %>% 
+  filter(soma < 0.5) %>% 
+  group_by(cat) %>% 
+  arrange(desc(soma)) %>% 
+  filter(row_number() == 1) %>% 
+  select(cat, percentil = ranking) %>% 
+  mutate(percentil = paste((percentil * 100) %>% round(3), "%", sep = ""))
+
+df.qqplot %>% 
   ggplot(aes(x = ranking, y = soma)) +
-  geom_line(aes(color = soma > .5), lwd = 1) +
+  geom_line(aes(color = cat), lwd = 1) +
   annotate("segment", x = 0, y = 0, xend = 1, yend = 1, linetype = "dashed") +
   # geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
   scale_y_continuous(labels = scales::percent_format(scale = 100)) +
   scale_x_continuous(labels = scales::percent_format(scale = 100)) +
-  labs(x = "Avenidas", y = "Acidentes", title = "QQPlot") +
+  labs(x = "Avenidas", y = "Sinistros", title = "QQPlot 2019-2023",color = "Veículo Envolvido") +
+  coord_fixed(ratio = 1) +
   scale_color_viridis_d(begin = .3, end = .7) +
-  theme_bw() +
-  theme(legend.position = "none")
+  theme_classic() +
+  theme(legend.position = c(0.8, .2))
 
-ggsave("output/qqplot.png", width = 4, height = 4, dpi = 600)
+ggsave("output/qqplot.png", width = 4.5, height = 4, dpi = 600)
 
 # ----
 pontos <- df %>% 
@@ -108,11 +128,14 @@ temp <- bairros %>%
   ggplot() +
   geom_sf(aes(fill = acidentes_km2, geometry = bairros), color = "white", lwd = .75) +
   # geom_sf(data = pontos, alpha = .05, color = "black", size = .75) +
-  scale_fill_viridis_c() +
+  scale_fill_viridis_c(direction = -1) +
   labs(fill = "Acidentes por km^2") +
   theme_void()
 
 ggsave("output/mapa_bairros.png", width = 10, height = 10, dpi = 600)
+
+temp
+
 
 ggplot() +
   geom_sf(data = bairros, color = "white", lwd = 1) +
