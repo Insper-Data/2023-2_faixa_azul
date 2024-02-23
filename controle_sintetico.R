@@ -1,6 +1,6 @@
 library(tidyverse)
 
-
+# install.packages("devtools")
 # library(devtools)
 # install_github("bcastanho/SCtools")
 
@@ -117,13 +117,13 @@ data.frame(sintetico = dataprep_out$Y0plot %*% synth_out$solution.w,
   ggplot(aes(x = data)) +
   annotate("rect", xmin = 2022 + 10/12, xmax = 2023 + 9/12, ymin = -Inf, ymax = Inf, fill = "black", alpha =.05) +
   geom_line(aes(y = sintetico, linetype = "Sintético")) +
-  geom_line(aes(y = bandeirantes, linetype = "Bandeirantes")) +
+  geom_line(aes(y = bandeirantes, linetype = "Observado")) +
   geom_ribbon(aes(ymin = ymin, ymax = ymax), fill = "blue", alpha = .2) +
   annotate("segment", x = 2022, y = 4.5, xend = 2022.6, yend = 4.5,
            arrow = arrow(length = unit(0.01, "npc"))) +
   annotate('text', x = 2021.6, y = 4.5,label = 'Faixa Azul', size = 3.5) +
   geom_vline(xintercept = 2022 + 10/12, alpha = 1, linetype = "dotted") +
-  scale_linetype_manual(values = c("Sintético" = "dashed", "Bandeirantes" = "solid")) + 
+  scale_linetype_manual(values = c("Sintético" = "dashed", "Observado" = "solid")) + 
   scale_y_continuous(limits = c(3,25), trans = "log10") +
   labs(x = "Data", y = "Número de sinistros por mês", linetype = "") +
   theme_classic() +
@@ -179,7 +179,9 @@ data.frame(sintetico = dataprep_out$Y0plot %*% synth_out$solution.w,
 ### Tabela com os coeficientes de cada componente do controle sintetico
 data.frame(list(rua = dataprep_out[["names.and.numbers"]][["unit.names"]][2:n.avenidas],
                 peso = synth_out[["solution.w"]] %>% round(4))) %>% 
-  arrange(desc(w.weight))
+  arrange(desc(w.weight)) %>% 
+  head(12) %>% 
+  summarize(sum(w.weight)) - 1
 
 #Teste placebo  ----
 dataprep_out.placebo <- Synth::dataprep(
@@ -219,7 +221,7 @@ data.frame(sintetico = dataprep_out.placebo$Y0plot %*% synth_out.placebo$solutio
   annotate("rect", xmin = 2022 + 10/12, xmax = 2023 + 12/12, ymin = 0, ymax = Inf, fill = "black", alpha =.05) +
   annotate("rect", xmin = 2022 + 2/12, xmax = 2022 + 10/12, ymin = 0, ymax = Inf, fill = "orange", alpha =.05) +
   geom_line(aes(y = sintetico, linetype = "Sintético")) +
-  geom_line(aes(y = bandeirantes, linetype = "Bandeirantes")) +
+  geom_line(aes(y = bandeirantes, linetype = "Observado")) +
   geom_vline(xintercept = 2022 + 10/12, alpha = 1, linetype = "dotted") +
   geom_vline(xintercept = 2022 + 2/12, alpha = 1, linetype = "dotted") +
   geom_ribbon(aes(ymin = ymin, ymax = ymax, fill = factor(cor)), alpha = .2) +
@@ -230,7 +232,7 @@ data.frame(sintetico = dataprep_out.placebo$Y0plot %*% synth_out.placebo$solutio
   annotate("segment", x = 2021.4, y = 4.5, xend = 2022.1, yend = 4.5,
            arrow = arrow(length = unit(0.01, "npc"))) +
   annotate('text', x = 2021.05, y = 4.5,label = 'Placebo', size = 3.5) +
-  scale_linetype_manual(values = c("Sintético" = "dashed", "Bandeirantes" = "solid")) + 
+  scale_linetype_manual(values = c("Sintético" = "dashed", "Observado" = "solid")) + 
   scale_y_continuous(limits = c(3,25), trans = "log10") +
   labs(x = "Data", y = "Número de sinistros por mês", linetype = "") +
   scale_fill_manual(values = c("0" = "blue", "1" = "red")) +
@@ -285,10 +287,10 @@ create.df(tdf, mspe.limit = 20) %>%
 
 ggsave("output/vassoura.png", dpi = 600, width = 9, height = 4)
 
-SCtools::mspe.test(tdf)$p.val * 100
-SCtools::mspe.test(tdf, discard.extreme = TRUE, mspe.limit = 20)$p.val * 100
-SCtools::mspe.test(tdf, discard.extreme = TRUE, mspe.limit = 10)$p.val * 100
-SCtools::mspe.test(tdf, discard.extreme = TRUE, mspe.limit = 3)$p.val * 100
+(SCtools::mspe.test(tdf)$p.val * 100) %>% round(2)
+(SCtools::mspe.test(tdf, discard.extreme = TRUE, mspe.limit = 20)$p.val * 100) %>% round(2)
+(SCtools::mspe.test(tdf, discard.extreme = TRUE, mspe.limit = 10)$p.val * 100) %>% round(2)
+(SCtools::mspe.test(tdf, discard.extreme = TRUE, mspe.limit = 3)$p.val * 100) %>% round(2)
 
 p.values <- c()
 for (mspe.limit in 1:40){
@@ -327,7 +329,7 @@ tibble(x = g$data[[1]]$x, y = g$data[[1]]$y) %>%
   theme_classic()
 
 
-SCtools::mspe.test(tdf, discard.extreme = TRUE, mspe.limit = 20)$test %>% 
+SCtools::mspe.test(tdf)$test %>% 
   as_tibble() %>% 
   select(avenida = "unit", ratio = "MSPE.ratios") %>% 
   arrange(desc(ratio)) %>% 
@@ -338,5 +340,17 @@ SCtools::mspe.test(tdf, discard.extreme = TRUE, mspe.limit = 20)$test %>%
   labs(x = "Razão MSPE Pós/Pré", y = "Frequência", fill = "Avenida") +
   coord_flip() +
   theme(legend.position = c(0.85, 0.85))
-ggsave("output/histograma_ratio.png", dpi = 600, width = 4, height = 5)
+ggsave("output/histograma_ratio_flip.png", dpi = 600, width = 4, height = 5)
+
+SCtools::mspe.test(tdf, discard.extreme = FALSE)$test %>% 
+  as_tibble() %>% 
+  select(avenida = "unit", ratio = "MSPE.ratios") %>% 
+  arrange(desc(ratio)) %>% 
+  mutate(cor = ifelse(avenida != "AVENIDA DOS BANDEIRANTES", "Outras", "Bandeirantes")) %>% 
+  ggplot() +
+  geom_histogram(aes(x = ratio, fill = cor), binwidth = 7.5) +
+  theme_classic() +
+  labs(x = "Razão MSPE Pós/Pré", y = "Frequência", fill = "Avenida") +
+  theme(legend.position = c(0.85, 0.85))
+ggsave("output/histograma_ratio.png", dpi = 600, width = 7, height = 3.5)
 
